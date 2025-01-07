@@ -23,10 +23,13 @@ import (
 type TargetPod struct {
 	// Name of the target pod, one of name or selector is required.
 	Name string `json:"name,omitempty"`
-	// Selector of the target pod(labels), one of name or selector is required.
-	// When specify selector, the snapshot-pod will snapshot the first pod that match the selector(name sorted).
-	// not implemented,
-	// Selector map[string]string `json:"selector,omitempty"`
+	// Selector of the target pod (labels). One of name or selector is required.
+	// Matching logic:
+	// 1. If both name and selector are specified, only name will be used for matching, and selector will be ignored.
+	// 2. If name is not specified, selector will be used to match pods.
+	//    - Only one pod can be matched by selector.
+	//    - If multiple pods are matched, an error will be raised.
+	Selector map[string]string `json:"selector,omitempty"`
 	// Containers to snapshot, if not specified, snapshot all containers in the pod.
 	Containers []string `json:"containers,omitempty"`
 }
