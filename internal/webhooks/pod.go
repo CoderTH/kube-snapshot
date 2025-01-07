@@ -62,7 +62,7 @@ func (p *PodImageWebhookAdmission) Handle(ctx context.Context, request admission
 			return admission.Allowed("already handled")
 		}
 
-		round, _ := p.handlePodUpdate(ctx, pod.Namespace, pod.Name)
+		round, _ := p.handlePodUpdate(ctx, pod.Namespace, pod)
 		if round != 0 {
 			klog.Infof("trigger new round %d for pod deleting %s/%s", round, pod.Namespace, pod.Name)
 		}
@@ -121,7 +121,7 @@ func (p *PodImageWebhookAdmission) Handle(ctx context.Context, request admission
 	return admission.Allowed("allowed")
 }
 
-func (p *PodImageWebhookAdmission) handlePodUpdate(ctx context.Context, ns, podName string) (int32, error) {
+func (p *PodImageWebhookAdmission) handlePodUpdate(ctx context.Context, ns string, pod *corev1.Pod) (int32, error) {
 	snapPodList := snapshotpodv1alpha1.SnapshotPodList{}
 	err := p.List(ctx, &snapPodList, client.InNamespace(ns))
 	if err != nil {
@@ -129,14 +129,20 @@ func (p *PodImageWebhookAdmission) handlePodUpdate(ctx context.Context, ns, podN
 	}
 	// todo more than one sp?
 	sp, ok := lo.Find(snapPodList.Items, func(item snapshotpodv1alpha1.SnapshotPod) bool {
-		return item.Spec.Target.Name == podName
+		if item.Spec.Target.Name != "" {
+			return item.Spec.Target.Name == pod.Name
+		}
+		return item.Spec.Target.Selector != nil && pod.Labels != nil &&
+			lo.EveryBy(lo.Entries(item.Spec.Target.Selector), func(entry lo.Entry[string, string]) bool {
+				return pod.Labels[entry.Key] == entry.Value
+			})
 	})
 	if !ok {
 		return 0, nil
 	}
 
 	if !sp.Spec.AutoSaveOptions.AutoSaveOnTermination {
-		klog.Infof("no auto save for pod %s/%s", ns, podName)
+		klog.Infof("no auto save for pod %s/%s", ns, pod.Name)
 		return 0, nil
 	}
 
@@ -156,7 +162,13 @@ func (p *PodImageWebhookAdmission) handlePodCreate(ctx context.Context, pod *cor
 	// TODO(@kebe): more than one sp?
 	// find all snapshot pods and match the container images.
 	sp, ok := lo.Find(snapPodList.Items, func(item snapshotpodv1alpha1.SnapshotPod) bool {
-		return item.Spec.Target.Name == pod.Name
+		if item.Spec.Target.Name != "" {
+			return item.Spec.Target.Name == pod.Name
+		}
+		return item.Spec.Target.Selector != nil && pod.Labels != nil &&
+			lo.EveryBy(lo.Entries(item.Spec.Target.Selector), func(entry lo.Entry[string, string]) bool {
+				return pod.Labels[entry.Key] == entry.Value
+			})
 	})
 	if !ok {
 		return nil, false

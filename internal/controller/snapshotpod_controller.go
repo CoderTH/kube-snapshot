@@ -28,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/containers/image/v5/docker"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -46,12 +47,31 @@ type SnapshotPodReconciler struct {
 }
 
 func (r *SnapshotPodReconciler) getPod(ctx context.Context, sp *snapshotpodv1alpha1.SnapshotPod) (*corev1.Pod, error) {
-	pod := corev1.Pod{}
-	err := r.Client.Get(ctx, client.ObjectKey{
-		Namespace: sp.Namespace,
-		Name:      sp.Spec.Target.Name,
-	}, &pod)
-	return &pod, err
+	if sp.Spec.Target.Name == "" && sp.Spec.Target.Selector == nil {
+		return nil, fmt.Errorf("target pod name or selector is required")
+	}
+	if sp.Spec.Target.Name != "" {
+		pod := corev1.Pod{}
+		err := r.Client.Get(ctx, client.ObjectKey{
+			Namespace: sp.Namespace,
+			Name:      sp.Spec.Target.Name,
+		}, &pod)
+		return &pod, err
+	}
+	if sp.Spec.Target.Selector != nil {
+		podList := corev1.PodList{}
+		err := r.Client.List(ctx, &podList, &client.ListOptions{
+			LabelSelector: labels.SelectorFromSet(sp.Spec.Target.Selector),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(podList.Items) != 1 {
+			return nil, fmt.Errorf("target pod not found or not unique")
+		}
+		return &podList.Items[0], nil
+	}
+	return nil, fmt.Errorf("target pod not found")
 }
 
 func (r *SnapshotPodReconciler) validate(ctx context.Context, sp *snapshotpodv1alpha1.SnapshotPod) error {
