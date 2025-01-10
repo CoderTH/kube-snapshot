@@ -183,7 +183,7 @@ func (p *PodImageWebhookAdmission) handlePodCreate(ctx context.Context, pod *cor
 				pullSecret: sp.Spec.ImageSaveOptions.RegistrySecretRef,
 			}
 		})
-	} else {
+	} else if sp.Spec.RecoveryRound == 0 {
 		sort.Slice(sp.Status.Snapshots, func(i, j int) bool {
 			return sp.Status.Snapshots[i].TriggerRound > sp.Status.Snapshots[j].TriggerRound
 		})
@@ -199,6 +199,8 @@ func (p *PodImageWebhookAdmission) handlePodCreate(ctx context.Context, pod *cor
 				}
 			}
 		})
+	} else {
+		return nil, false
 	}
 	return out, len(out) > 0
 }

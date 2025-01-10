@@ -299,6 +299,9 @@ func (r *SnapshotPodReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		logger.Error(err, "get instance error")
 		return ctrl.Result{}, err
 	}
+	if sp.Spec.TriggerRound <= 0 {
+		return ctrl.Result{}, nil
+	}
 	type reconciler func(ctx context.Context, sp *snapshotpodv1alpha1.SnapshotPod) error
 	type rec struct {
 		typ string
