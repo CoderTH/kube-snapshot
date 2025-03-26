@@ -47,7 +47,7 @@ func (d *dockerCompatibleRuntime) Pull(ctx context.Context, image string, auth *
 }
 
 func (d *dockerCompatibleRuntime) Push(ctx context.Context, image string, auth *Auth) error {
-	return d.withLoginContextCommands(ctx, auth, append([]string{"push", image}), nil)
+	return d.withLoginContextCommands(ctx, auth, []string{"push", image}, nil)
 }
 
 func (d *dockerCompatibleRuntime) withLoginContextCommands(ctx context.Context, auth *Auth, args []string, stdin io.Reader) error {
