@@ -26,16 +26,15 @@ import (
 	"github.com/containers/image/v5/docker/reference"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	criruntime "github.com/baizeai/kube-snapshot/internal/controller/runtime"
-
 	snapshotpodv1alpha1 "github.com/baizeai/kube-snapshot/api/v1alpha1"
+	criruntime "github.com/baizeai/kube-snapshot/internal/controller/runtime"
 )
 
 const (
@@ -148,6 +147,9 @@ func (r *SnapshotPodTaskReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	spt := snapshotpodv1alpha1.SnapshotPodTask{}
 	err := r.Client.Get(ctx, req.NamespacedName, &spt)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{}, err
 	}
 	if spt.Spec.NodeName != r.NodeName {
@@ -196,6 +198,10 @@ func (r *SnapshotPodTaskReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			logger.Error(err, "run reconcile task error", "type", rec.typ, "namespace", spt.Namespace, "name", spt.Name)
 			spt.Status.Conditions[i].Status = metav1.ConditionFalse
 			spt.Status.Conditions[i].Message = err.Error()
+			// Update status immediately after error
+			if updateErr := r.Status().Update(ctx, &spt); updateErr != nil {
+				return ctrl.Result{}, updateErr
+			}
 			break
 		} else {
 			spt.Status.Conditions[i].Status = metav1.ConditionTrue
@@ -205,7 +211,13 @@ func (r *SnapshotPodTaskReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			// update LastTransitionTime if condition changed.
 			spt.Status.Conditions[i].LastTransitionTime = metav1.Now()
 		}
+		// Update status after each successful step
+		if updateErr := r.Status().Update(ctx, &spt); updateErr != nil {
+			return ctrl.Result{}, updateErr
+		}
 	}
+
+	// Update phase based on conditions
 	switch {
 	case lo.EveryBy(spt.Status.Conditions, func(item metav1.Condition) bool {
 		return item.Status == metav1.ConditionTrue
@@ -220,9 +232,11 @@ func (r *SnapshotPodTaskReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		spt.Status.Phase = snapshotpodv1alpha1.SnapshotPodTaskPhaseCreated
 	}
 
+	// Final status update for phase change
 	if err := r.Status().Update(ctx, &spt); err != nil {
 		return ctrl.Result{}, err
 	}
+
 	switch spt.Status.Phase {
 	case snapshotpodv1alpha1.SnapshotPodTaskPhaseFailed, snapshotpodv1alpha1.SnapshotPodTaskPhaseCompleted:
 		return ctrl.Result{}, nil

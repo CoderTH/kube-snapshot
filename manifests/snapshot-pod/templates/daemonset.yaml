@@ -29,6 +29,10 @@ spec:
           hostPath:
             path: /var/run/
             type: ''
+        - name: host-certs
+          hostPath:
+            path: {{ if eq .Values.CRIRuntime "containerd" }}/etc/containerd/certs.d{{ else }}/etc/docker/certs.d{{ end }}
+            type: Directory
         {{ if .Values.systemWideDockerSecret }}
         - name: docker-registry-secret
           secret:
@@ -60,6 +64,13 @@ spec:
           volumeMounts:
             - name: host-run
               mountPath: /var/run/
+            {{- if eq .Values.CRIRuntime "containerd" }}
+            - name: host-certs
+              mountPath: /etc/containerd/certs.d
+            {{- else if eq .Values.CRIRuntime "docker" }}
+            - name: host-certs
+              mountPath: /etc/docker/certs.d
+            {{- end }}
             {{ if .Values.systemWideDockerSecret }}
             - name: docker-registry-secret
               mountPath: /root/.docker/system-wide/config.json
